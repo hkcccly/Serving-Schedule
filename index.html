@@ -418,6 +418,7 @@
 
     let scheduleData = [];
     
+    // 嚴格規定的職分次序：領唱，隊員，司琴，司他，鼓手
     const roleOrder = ["領唱", "隊員", "司琴", "司他", "鼓手"];
     const allowedRoles = [...roleOrder];
     let currentActiveId = null;
@@ -470,20 +471,6 @@
 
     if (localStorage.getItem('church_theme') === 'dark') {
       document.body.classList.add('dark-mode');
-    }
-
-    function getNamesByGroup(isVocal) {
-      const nameSet = new Set();
-      const targetRoles = isVocal ? vocalRoles : instrumentRoles;
-      scheduleData.forEach(item => {
-        Object.entries(item.roles || {}).forEach(([role, val]) => {
-          if (targetRoles.includes(role)) {
-            if (Array.isArray(val)) val.forEach(v => nameSet.add(v));
-            else if (typeof val === 'string') nameSet.add(val);
-          }
-        });
-      });
-      return Array.from(nameSet).sort();
     }
 
     function highlightText(text, query) {
@@ -564,6 +551,7 @@
       document.getElementById("generalModal").classList.remove("active");
     }
 
+    // 直接替換
     function openReplaceModal(id, date) {
       currentActiveId = id;
       const item = scheduleData.find(s => s.id === id);
@@ -590,9 +578,20 @@
     }
 
     function selectReplaceTarget(role, oldPerson, date) {
-      const candidates = getNamesByGroup(vocalRoles.includes(role));
-      const body = document.getElementById("modalBody");
+      const isVocal = vocalRoles.includes(role);
+      const targetRoles = isVocal ? vocalRoles : instrumentRoles;
+      const nameSet = new Set();
+      scheduleData.forEach(item => {
+        Object.entries(item.roles || {}).forEach(([r, val]) => {
+          if (targetRoles.includes(r)) {
+            if (Array.isArray(val)) val.forEach(v => nameSet.add(v));
+            else if (typeof val === 'string') nameSet.add(val);
+          }
+        });
+      });
+      const candidates = Array.from(nameSet).sort();
 
+      const body = document.getElementById("modalBody");
       let optionsHtml = candidates.map(n => '<option value="' + n + '" ' + (n === oldPerson ? 'selected' : '') + '>' + n + '</option>').join('');
 
       body.innerHTML = 
@@ -626,6 +625,7 @@
       fetchSchedules();
     }
 
+    // 事奉對調
     function openSwapModal(id, date) {
       currentActiveId = id;
       const item = scheduleData.find(s => s.id === id);
@@ -652,7 +652,6 @@
     }
 
     function selectSwapTarget(role, oldPerson, date) {
-      const candidates = getNamesByGroup(vocalRoles.includes(role));
       const body = document.getElementById("modalBody");
 
       const now = new Date();
@@ -660,27 +659,59 @@
       const futureSchedules = scheduleData.filter(d => d.date >= todayStr);
 
       let dateOptions = futureSchedules.map(d => '<option value="' + d.id + '" ' + (d.id === currentActiveId ? 'selected' : '') + '>' + d.date + '</option>').join('');
-      let personOptions = candidates.map(n => '<option value="' + n + '" ' + (n === oldPerson ? 'selected' : '') + '>' + n + '</option>').join('');
 
       body.innerHTML = 
         '<div style="margin-bottom: 12px; font-size: 14px;">對調 <b>' + date + '</b> 的 <b>' + role + '</b>（原：<b>' + oldPerson + '</b>）</div>' +
         '<div class="form-group">' +
           '<label class="form-label">對換日期：</label>' +
-          '<select id="targetSwapDateId" class="form-select">' + dateOptions + '</select>' +
+          '<select id="targetSwapDateId" class="form-select" onchange="updateSwapCandidates(\'' + role + '\')">' + dateOptions + '</select>' +
         '</div>' +
         '<div class="form-group">' +
-          '<label class="form-label">對換新人：</label>' +
-          '<select id="targetNewPerson" class="form-select">' + personOptions + '</select>' +
+          '<label class="form-label">對換事奉人員：</label>' +
+          '<select id="targetSwapPerson" class="form-select"></select>' +
         '</div>' +
         '<div class="modal-footer">' +
           '<button class="cancel-btn" onclick="openSwapModal(' + currentActiveId + ', \'' + date + '\')">返回</button>' +
           '<button class="secondary-action-btn" onclick="executeSwap(\'' + role + '\', \'' + oldPerson + '\', \'' + date + '\')">確認對調</button>' +
         '</div>';
+
+      // 初始化載入當天事奉人員名單
+      updateSwapCandidates(role);
+    }
+
+    // 動態更新對換日期的當天事奉人員選單
+    function updateSwapCandidates(role) {
+      const targetDateId = parseInt(document.getElementById("targetSwapDateId").value);
+      const targetItem = scheduleData.find(s => s.id === targetDateId);
+      const personSelect = document.getElementById("targetSwapPerson");
+      if (!targetItem || !personSelect) return;
+
+      const isVocal = vocalRoles.includes(role);
+      const targetRoles = isVocal ? vocalRoles : instrumentRoles;
+
+      const servingNames = [];
+      Object.entries(targetItem.roles || {}).forEach(([r, val]) => {
+        if (targetRoles.includes(r)) {
+          if (Array.isArray(val)) {
+            val.forEach(p => servingNames.push(p));
+          } else if (typeof val === 'string') {
+            servingNames.push(val);
+          }
+        }
+      });
+
+      const uniqueNames = Array.from(new Set(servingNames)).sort();
+      personSelect.innerHTML = uniqueNames.map(n => '<option value="' + n + '">' + n + '</option>').join('');
     }
 
     async function executeSwap(role, oldPerson, sourceDate) {
-      const newPerson = document.getElementById("targetNewPerson").value;
+      const targetSwapPerson = document.getElementById("targetSwapPerson").value;
       const targetDateId = parseInt(document.getElementById("targetSwapDateId").value);
+
+      if (!targetSwapPerson) {
+        alert('請選擇對換的事奉人員！');
+        return;
+      }
 
       const sourceItem = scheduleData.find(s => s.id === currentActiveId);
       const targetItem = scheduleData.find(s => s.id === targetDateId);
@@ -688,24 +719,25 @@
 
       const now = new Date().toISOString();
 
+      // 1. 更新來源卡片
       let sVal = sourceItem.roles[role];
-      sourceItem.roles[role] = Array.isArray(sVal) ? sVal.map(p => p === oldPerson ? newPerson : p) : newPerson;
+      sourceItem.roles[role] = Array.isArray(sVal) ? sVal.map(p => p === oldPerson ? targetSwapPerson : p) : targetSwapPerson;
       sourceItem.roles._is_updated = true;
       sourceItem.updated_at = now;
 
+      // 2. 更新目標卡片（尋找該人員在目標日期中的職分並與 oldPerson 對調）
       if (sourceItem.id !== targetItem.id) {
-        let tVal = targetItem.roles[role];
-        if (!tVal) {
-          targetItem.roles[role] = oldPerson;
-        } else if (Array.isArray(tVal)) {
-          if (tVal.includes(newPerson)) {
-            targetItem.roles[role] = tVal.map(p => p === newPerson ? oldPerson : p);
-          } else {
-            targetItem.roles[role] = [...tVal, oldPerson];
+        Object.entries(targetItem.roles || {}).forEach(([r, val]) => {
+          if (allowedRoles.includes(r)) {
+            if (Array.isArray(val)) {
+              if (val.includes(targetSwapPerson)) {
+                targetItem.roles[r] = val.map(p => p === targetSwapPerson ? oldPerson : p);
+              }
+            } else if (val === targetSwapPerson) {
+              targetItem.roles[r] = oldPerson;
+            }
           }
-        } else {
-          targetItem.roles[role] = oldPerson;
-        }
+        });
         targetItem.roles._is_updated = true;
         targetItem.updated_at = now;
         await supabaseClient.from('schedules').update({ roles: targetItem.roles, updated_at: now }).eq('id', targetItem.id);
@@ -715,7 +747,7 @@
       if (error) { alert('對調失敗：' + error.message); return; }
 
       closeModal();
-      alert('已成功將 ' + sourceDate + ' 的 ' + role + '【' + oldPerson + '】與 ' + targetItem.date + ' 的【' + newPerson + '】對調！');
+      alert('已成功將 ' + sourceDate + ' 的 ' + role + '【' + oldPerson + '】與 ' + targetItem.date + ' 的【' + targetSwapPerson + '】對調！');
       fetchSchedules();
     }
 
