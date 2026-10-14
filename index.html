@@ -155,11 +155,22 @@
       align-items: center;
     }
 
+    .card-header-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
     .date-badge {
       font-weight: 600;
       font-size: 17px;
       color: var(--accent-color);
-      margin-bottom: 6px;
+    }
+
+    .card-item-update {
+      font-size: 11px;
+      color: var(--secondary-text);
     }
 
     .role-section {
@@ -425,7 +436,6 @@
     function updateGlobalLastModified() {
       if (!scheduleData || scheduleData.length === 0) return;
       let latest = scheduleData.reduce((max, item) => item.updated_at > max ? item.updated_at : max, scheduleData[0].updated_at);
-      // 修正：使用 toLocaleString 確保日期與時間皆能正確顯示
       const timeStr = new Date(latest).toLocaleString('zh-Hant', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
       document.getElementById("lastUpdate").innerHTML = `<span class="red-dot"></span>已更新：${timeStr}`;
     }
@@ -505,9 +515,17 @@
           htmlContent += `<div class="role-row">${snippet}</div>`;
         });
 
+        // 格式化單一卡片的更新時間
+        const updateTimeStr = item.updated_at 
+          ? new Date(item.updated_at).toLocaleString('zh-Hant', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }) 
+          : '';
+
         card.innerHTML = `
           <div class="role-section">
-            <div class="date-badge">📅 ${highlightText(item.date, trimmedFilter)}</div>
+            <div class="card-header-row">
+              <div class="date-badge">📅 ${highlightText(item.date, trimmedFilter)}</div>
+              ${updateTimeStr ? `<div class="card-item-update">更新：${updateTimeStr}</div>` : ''}
+            </div>
             ${htmlContent || '<span style="color:var(--secondary-text);font-size:13px;">無排班資料</span>'}
           </div>
           <div class="card-actions">
